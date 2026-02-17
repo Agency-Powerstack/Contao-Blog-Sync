@@ -1,0 +1,27 @@
+services:
+  _defaults:
+    autowire: true
+    autoconfigure: true
+    public: false
+
+  AgencyPowerstack\ContaoBlogSyncBundle\:
+    resource: '../src/'
+    exclude:
+      - '../src/ContaoManager/'
+      - '../src/Resources/'
+
+  AgencyPowerstack\ContaoBlogSyncBundle\Service\ApiClient:
+    arguments:
+      $logger: '@monolog.logger'
+      $apiUrl: 'https://app.agency-powerstack.com/backend/integrations/contao'
+
+  AgencyPowerstack\ContaoBlogSyncBundle\Service\BlogImporter:
+    arguments:
+      $logger: '@monolog.logger'
+
+  AgencyPowerstack\ContaoBlogSyncBundle\Command\SyncBlogsCommand:
+    tags:
+      - { name: 'console.command' }
+
+  AgencyPowerstack\ContaoBlogSyncBundle\Cron\BlogSyncCron:
+    public: true

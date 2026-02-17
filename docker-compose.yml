@@ -1,0 +1,42 @@
+services:
+  contao-db:
+    image: mysql:8.0
+    container_name: contao-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - contao-db-data:/var/lib/mysql
+    ports:
+      - "3307:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  contao-web:
+    build: ./docker
+    container_name: contao-web
+    restart: unless-stopped
+    depends_on:
+      contao-db:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    volumes:
+      - contao-data:/var/www/html
+      - ./:/var/www/bundle:ro
+    environment:
+      CONTAO_VERSION: ${CONTAO_VERSION:-5.3}
+      DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@contao-db:3306/${MYSQL_DATABASE}
+      CONTAO_ADMIN_USER: ${CONTAO_ADMIN_USER:-admin}
+      CONTAO_ADMIN_PASSWORD: ${CONTAO_ADMIN_PASSWORD}
+      CONTAO_ADMIN_EMAIL: ${CONTAO_ADMIN_EMAIL:-admin@example.com}
+
+volumes:
+  contao-db-data:
+  contao-data:

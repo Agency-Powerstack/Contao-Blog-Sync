@@ -15,10 +15,10 @@ class ApiClient
     private string $apiUrl;
     private ?string $accessToken = null;
 
-    public function __construct(LoggerInterface $logger, string $apiUrl = 'https://app.agency-powerstack.com/backend/integrations/contao')
+    public function __construct(LoggerInterface $logger, string $apiUrl = 'https://app.agency-powerstack.com/backend/contao/')
     {
         $this->logger = $logger;
-        $this->apiUrl = rtrim($apiUrl, '/');
+        $this->apiUrl = rtrim($apiUrl, '/') . '/';
         $this->client = new Client([
             'base_uri' => $this->apiUrl,
             'timeout' => 30,
@@ -35,7 +35,7 @@ class ApiClient
     public function authenticate(string $clientId, string $clientSecret): bool
     {
         try {
-            $response = $this->client->post('/login', [
+            $response = $this->client->post('login', [
                 'json' => [
                     'client_id' => $clientId,
                     'client_secret' => $clientSecret,
@@ -43,7 +43,7 @@ class ApiClient
             ]);
 
             $data = json_decode($response->getBody()->getContents(), true);
-            
+
             if (isset($data['access_token'])) {
                 $this->accessToken = $data['access_token'];
                 $this->logger->info('API authentication successful');
@@ -70,7 +70,7 @@ class ApiClient
     /**
      * Holt neue Blogs von der API
      */
-    public function fetchNewBlogs(?int $lastSyncTimestamp = null): array
+    public function fetchNewBlogs(?int $lastSyncTimestamp = null, array $excludeIds = []): array
     {
         if (!$this->accessToken) {
             $this->logger->error('Cannot fetch blogs: Not authenticated');
@@ -82,8 +82,11 @@ class ApiClient
             if ($lastSyncTimestamp) {
                 $queryParams['since'] = $lastSyncTimestamp;
             }
+            if (!empty($excludeIds)) {
+                $queryParams['exclude_ids'] = implode(',', $excludeIds);
+            }
 
-            $response = $this->client->get('/blogs', [
+            $response = $this->client->get('blogs', [
                 'headers' => [
                     'Authorization' => 'Bearer ' . $this->accessToken,
                 ],
@@ -91,7 +94,7 @@ class ApiClient
             ]);
 
             $data = json_decode($response->getBody()->getContents(), true);
-            
+
             if (isset($data['blogs']) && is_array($data['blogs'])) {
                 $this->logger->info('Fetched ' . count($data['blogs']) . ' blogs from API');
                 return $data['blogs'];
@@ -107,6 +110,31 @@ class ApiClient
     }
 
     /**
+     * Löscht die Verbindung im Backend
+     */
+    public function deleteConnection(string $connectionId): bool
+    {
+        if (!$this->accessToken) {
+            return false;
+        }
+
+        try {
+            $this->client->delete("connections/{$connectionId}", [
+                'headers' => [
+                    'Authorization' => 'Bearer ' . $this->accessToken,
+                ]
+            ]);
+
+            $this->logger->info('Connection deleted successfully: ' . $connectionId);
+            return true;
+
+        } catch (GuzzleException $e) {
+            $this->logger->error('Error deleting connection: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
      * Bestätigt Import eines Blogs
      */
     public function confirmBlogImport(string $blogId): bool
@@ -116,7 +144,7 @@ class ApiClient
         }
 
         try {
-            $this->client->post("/blogs/{$blogId}/confirm", [
+            $this->client->post("blogs/{$blogId}/confirm", [
                 'headers' => [
                     'Authorization' => 'Bearer ' . $this->accessToken,
                 ]

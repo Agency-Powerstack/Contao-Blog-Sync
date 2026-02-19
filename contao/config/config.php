@@ -3,9 +3,10 @@
 /**
  * Backend modules
  */
-$GLOBALS['BE_MOD']['content']['blog_sync_config'] = [
+$GLOBALS['BE_MOD']['agency_powerstack']['blog_sync_config'] = [
     'tables' => ['tl_blog_sync_config'],
     'icon' => 'bundles/contaoblogsync/icons/blog-sync.svg',
+    'javascript' => 'bundles/contaoblogsync/js/websocket.js',
 ];
 
 /**

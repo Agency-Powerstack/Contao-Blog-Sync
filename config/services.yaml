@@ -9,11 +9,12 @@ services:
     exclude:
       - '../src/ContaoManager/'
       - '../src/Resources/'
+      - '../src/DependencyInjection/'
 
   AgencyPowerstack\ContaoBlogSyncBundle\Service\ApiClient:
     arguments:
       $logger: '@monolog.logger'
-      $apiUrl: 'https://app.agency-powerstack.com/backend/integrations/contao'
+      $apiUrl: '%blog_sync.frontend_url%/backend/contao/'
 
   AgencyPowerstack\ContaoBlogSyncBundle\Service\BlogImporter:
     arguments:
@@ -25,3 +26,22 @@ services:
 
   AgencyPowerstack\ContaoBlogSyncBundle\Cron\BlogSyncCron:
     public: true
+
+  AgencyPowerstack\ContaoBlogSyncBundle\Controller\ConnectCallbackController:
+    tags:
+      - { name: 'controller.service_arguments' }
+
+  AgencyPowerstack\ContaoBlogSyncBundle\Controller\SyncTriggerController:
+    tags:
+      - { name: 'controller.service_arguments' }
+
+  AgencyPowerstack\ContaoBlogSyncBundle\Controller\DisconnectController:
+    tags:
+      - { name: 'controller.service_arguments' }
+
+  AgencyPowerstack\ContaoBlogSyncBundle\EventListener\AccountDeleteListener:
+    public: true
+    arguments:
+      $apiClient: '@AgencyPowerstack\ContaoBlogSyncBundle\Service\ApiClient'
+      $connection: '@doctrine.dbal.default_connection'
+      $logger: '@monolog.logger'

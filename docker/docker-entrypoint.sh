@@ -35,9 +35,20 @@ if [ -n "$DATABASE_URL" ]; then
     grep -q "DATABASE_URL" /var/www/html/.env.local 2>/dev/null || echo "DATABASE_URL=${DATABASE_URL}" >> /var/www/html/.env.local
 fi
 
+# Blog-Images-Verzeichnis anlegen (damit contao:symlinks den Symlink erstellen kann)
+mkdir -p /var/www/html/files/blog-images
+
+# Echtes Verzeichnis in public/ entfernen falls vorhanden (kein Symlink)
+if [ -d /var/www/html/public/files/blog-images ] && [ ! -L /var/www/html/public/files/blog-images ]; then
+    rm -rf /var/www/html/public/files/blog-images
+fi
+
 # Datenbank-Migration
 echo ">>> Führe Datenbank-Migrationen aus..."
 php vendor/bin/contao-console contao:migrate --no-interaction || true
+
+# Symlinks neu generieren (erstellt public/files/blog-images -> files/blog-images)
+php vendor/bin/contao-console contao:symlinks || true
 
 # Admin-User anlegen falls nicht vorhanden
 if [ -n "$CONTAO_ADMIN_PASSWORD" ]; then

@@ -1,0 +1,7 @@
+monolog:
+  handlers:
+    blog_sync_stderr:
+      type: stream
+      path: 'php://stderr'
+      level: error
+      channels: ['!event']

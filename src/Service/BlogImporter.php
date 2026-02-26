@@ -69,21 +69,24 @@ class BlogImporter
             $news->time = $createdAt;
 
             // Vollständiger HTML-Inhalt – bevorzuge targetSystemCode (Contao-spezifisch)
-            $htmlContent = $blogData['targetSystemCode'] ?? $blogData['htmlContent'] ?? '';
+            $rawHtml = $blogData['targetSystemCode'] ?? $blogData['htmlContent'] ?? '';
 
-            // Bilder-Placeholder ersetzen – Contao-Pfade der hochgeladenen Bilder verwenden
-            $htmlContent = $this->replaceImagePlaceholders(
-                $htmlContent,
+            // <img>-Tags und Wrapper um {{contao_image::N}}-Platzhalter entfernen,
+            // damit preg_split() saubere HTML-Segmente erzeugt (keine kaputten <img>-Reste)
+            $rawHtml = $this->normalizeImagePlaceholders($rawHtml);
+
+            // Bilder registrieren, UUID-Map aufbauen (index → binary UUID)
+            $imageUuids = $this->collectContentImageUuids(
                 $blogData['contentImageUrls'] ?? [],
                 $externalId
             );
 
-            // Teaser = gekürzter Plaintext (max. 2000 Zeichen) aus textContent
-            $news->teaser = $this->buildTeaser($blogData['textContent'] ?? '', $htmlContent);
+            // Teaser = gekürzter Plaintext (max. 300 Zeichen) aus textContent
+            $news->teaser = $this->buildTeaser($blogData['textContent'] ?? '', $rawHtml);
 
             // Veröffentlichungsstatus
             $status = $blogData['status'] ?? '';
-            $news->published = ($status === 'PUBLISH') ? '1' : '';
+            $news->published = ($status === 'PUBLISH') ? 1 : 0;
 
             // Externe ID speichern
             $news->externalId = $externalId;
@@ -111,14 +114,14 @@ class BlogImporter
 
             $news->save();
 
-            // Vollständiger Artikelinhalt als tl_content-Element speichern
-            $this->updateContentElements((int) $news->id, $htmlContent);
+            // Vollständiger Artikelinhalt als tl_content-Elemente speichern
+            $this->updateContentElements((int) $news->id, $rawHtml, $imageUuids);
 
             $this->logger->info("Successfully imported blog: {$news->headline} (ID: {$news->id})");
 
             return $news;
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $this->logger->error("Error importing blog: " . $e->getMessage());
             return null;
         }
@@ -144,10 +147,12 @@ class BlogImporter
     }
 
     /**
-     * Löscht bestehende auto-generierte tl_content-Einträge und legt einen neuen
-     * HTML-Block für den vollständigen Artikelinhalt an.
+     * Löscht bestehende auto-generierte tl_content-Einträge und legt abwechselnd
+     * HTML- und native Image-Elemente an (aufgesplittet an {{contao_image::N}}-Platzhaltern).
+     *
+     * @param array<int, string> $imageUuids index → binary UUID
      */
-    private function updateContentElements(int $newsId, string $htmlContent): void
+    private function updateContentElements(int $newsId, string $rawHtml, array $imageUuids): void
     {
         try {
             $this->connection->delete('tl_content', [
@@ -155,63 +160,125 @@ class BlogImporter
                 'ptable' => 'tl_news',
             ]);
 
-            if (trim($htmlContent) === '') {
+            if (trim($rawHtml) === '') {
                 return;
             }
 
-            $this->connection->insert('tl_content', [
-                'pid'       => $newsId,
-                'ptable'    => 'tl_news',
-                'tstamp'    => time(),
-                'type'      => 'html',
-                'html'      => $htmlContent,
-                'published' => '1',
-                'sorting'   => 128,
-            ]);
-            $inserted = (int) $this->connection->lastInsertId();
-            $this->logger->info("tl_content (ID: {$inserted}) created for news {$newsId}");
-        } catch (\Exception $e) {
+            // An {{contao_image::N}}-Platzhaltern aufsplitten (Delimiter werden miterfasst)
+            $parts = preg_split('/\{\{contao_image::(\d+)\}\}/', $rawHtml, -1, PREG_SPLIT_DELIM_CAPTURE);
+
+            $sorting = 128;
+            $i       = 0;
+            $count   = count($parts);
+
+            while ($i < $count) {
+                // Gerades Token: HTML-Segment
+                $htmlSegment = $parts[$i];
+                $safeHtml    = str_replace(['{{', '}}'], ['&#123;&#123;', '&#125;&#125;'], $htmlSegment);
+
+                if (trim($safeHtml) !== '') {
+                    $this->connection->insert('tl_content', [
+                        'pid'       => $newsId,
+                        'ptable'    => 'tl_news',
+                        'tstamp'    => time(),
+                        'type'      => 'html',
+                        'html'      => $safeHtml,
+                        'invisible' => 0,
+                        'sorting'   => $sorting,
+                    ]);
+                    $sorting += 128;
+                }
+                $i++;
+
+                // Ungerades Token: Bild-Index (aus Delimiter-Capture)
+                if ($i < $count) {
+                    $index = (int) $parts[$i];
+                    if (isset($imageUuids[$index])) {
+                        $this->connection->insert('tl_content', [
+                            'pid'       => $newsId,
+                            'ptable'    => 'tl_news',
+                            'tstamp'    => time(),
+                            'type'      => 'image',
+                            'singleSRC' => $imageUuids[$index],
+                            // Contao's ResizeCalculator betrachtet width=0,height=0 als "leer" und
+                            // gibt den Rohpfad zurück. Erst eine Dimension > 0 triggert den
+                            // Image-Processor → /assets/images/... URL.
+                            // 1200px proportional: downscale für große Bilder, upscale für kleine
+                            // (alle erhalten einen /assets/images/... Link).
+                            'size'      => serialize([1200, 0, 'proportional']),
+                            'floating'  => 'above',
+                            'invisible' => 0,
+                            'sorting'   => $sorting,
+                        ]);
+                        $sorting += 128;
+                    }
+                    $i++;
+                }
+            }
+
+            $this->logger->info("tl_content elements created for news {$newsId} (sorting up to " . ($sorting - 128) . ')');
+        } catch (\Throwable $e) {
             $this->logger->error("tl_content insert failed for news {$newsId}: " . $e->getMessage());
         }
     }
 
     /**
-     * Ersetzt Bild-Placeholder im HTML mit öffentlichen Contao-Bild-URLs.
+     * Normalisiert {{contao_image::N}}-Platzhalter im HTML.
      *
-     * Platzhalterformat: {{contao_image::INDEX}} (im src-Attribut des <img>-Tags)
-     * Wird durch den absoluten Pfad des hochgeladenen Bildes ersetzt.
+     * Die KI erzeugt: <figure><img src="{{contao_image::N}}" alt="..."><figcaption>...</figcaption></figure>
+     * Nach Normalisierung: {{contao_image::N}} als bloßer Platzhalter ohne Wrapper,
+     * damit preg_split() saubere HTML-Segmente erzeugt.
+     *
+     * Schritte:
+     *  1. <img src="{{...}}"> → {{...}}  (Platzhalter aus src-Attribut extrahieren)
+     *  2. <figure>...(nur Platzhalter + opt. figcaption)...</figure> → {{...}}
+     *  3. <p>...(nur Platzhalter)...</p> → {{...}}
      */
-    private function replaceImagePlaceholders(string $html, array $imageUrls, string $postId): string
+    private function normalizeImagePlaceholders(string $html): string
     {
-        if (empty($imageUrls)) {
-            return $html;
-        }
+        // 1. <img>-Tag entfernen, Platzhalter aus src-Attribut extrahieren
+        $html = preg_replace(
+            '/<img\b[^>]*\bsrc="(\{\{contao_image::\d+\}\})"[^>]*\/?>/i',
+            '$1',
+            $html
+        );
 
+        // 2. <figure>-Wrapper abstreifen (mit optionaler figcaption)
+        $html = preg_replace(
+            '/<figure\b[^>]*>\s*(\{\{contao_image::\d+\}\})\s*(?:<figcaption\b[^>]*>.*?<\/figcaption>\s*)?<\/figure>/si',
+            '$1',
+            $html
+        );
+
+        // 3. <p>-Wrapper abstreifen
+        $html = preg_replace(
+            '/<p\b[^>]*>\s*(\{\{contao_image::\d+\}\})\s*<\/p>/si',
+            '$1',
+            $html
+        );
+
+        return $html;
+    }
+
+    /**
+     * Registriert alle Content-Bilder in Contao und gibt eine Map index → binary UUID zurück.
+     *
+     * @param array<int|string, string> $imageUrls
+     * @return array<int, string>
+     */
+    private function collectContentImageUuids(array $imageUrls, string $postId): array
+    {
+        $uuids = [];
         foreach ($imageUrls as $index => $imageUrl) {
             if (empty($imageUrl)) {
                 continue;
             }
-
-            $placeholder = '{{contao_image::' . $index . '}}';
-            if (!str_contains($html, $placeholder)) {
-                continue;
-            }
-
-            $imageUuid = $this->ensureImageRegistered($imageUrl, $postId, 'content-' . $index);
-
-            if ($imageUuid) {
-                $file = FilesModel::findByUuid($imageUuid);
-                if ($file) {
-                    $html = str_replace($placeholder, '/' . $file->path, $html);
-                } else {
-                    $html = str_replace($placeholder, '', $html);
-                }
-            } else {
-                $html = str_replace($placeholder, '', $html);
+            $uuid = $this->ensureImageRegistered($imageUrl, $postId, 'content-' . $index);
+            if ($uuid !== null) {
+                $uuids[(int) $index] = $uuid;
             }
         }
-
-        return $html;
+        return $uuids;
     }
 
     /**
@@ -264,7 +331,7 @@ class BlogImporter
 
             return null;
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $this->logger->error("Error registering image: " . $e->getMessage());
             return null;
         }

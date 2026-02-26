@@ -9,12 +9,14 @@ use Contao\NewsBundle\ContaoNewsBundle;
 use Contao\ManagerPlugin\Bundle\BundlePluginInterface;
 use Contao\ManagerPlugin\Bundle\Config\BundleConfig;
 use Contao\ManagerPlugin\Bundle\Parser\ParserInterface;
+use Contao\ManagerPlugin\Config\ConfigPluginInterface;
 use Contao\ManagerPlugin\Routing\RoutingPluginInterface;
+use Symfony\Component\Config\Loader\LoaderInterface;
 use Symfony\Component\Config\Loader\LoaderResolverInterface;
 use Symfony\Component\HttpKernel\KernelInterface;
 use AgencyPowerstack\ContaoBlogSyncBundle\ContaoBlogSyncBundle;
 
-class Plugin implements BundlePluginInterface, RoutingPluginInterface
+class Plugin implements BundlePluginInterface, RoutingPluginInterface, ConfigPluginInterface
 {
     public function getBundles(ParserInterface $parser): array
     {
@@ -22,6 +24,11 @@ class Plugin implements BundlePluginInterface, RoutingPluginInterface
             BundleConfig::create(ContaoBlogSyncBundle::class)
                 ->setLoadAfter([ContaoCoreBundle::class, ContaoNewsBundle::class])
         ];
+    }
+
+    public function registerContainerConfiguration(LoaderInterface $loader, array $managerConfig): void
+    {
+        $loader->load(__DIR__ . '/../../config/monolog.yaml');
     }
 
     public function getRouteCollection(LoaderResolverInterface $resolver, KernelInterface $kernel): ?\Symfony\Component\Routing\RouteCollection

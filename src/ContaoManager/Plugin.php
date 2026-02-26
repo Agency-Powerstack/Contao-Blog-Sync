@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AgencyPowerstack\ContaoBlogSyncBundle\ContaoManager;
 
 use Contao\CoreBundle\ContaoCoreBundle;
+use Contao\NewsBundle\ContaoNewsBundle;
 use Contao\ManagerPlugin\Bundle\BundlePluginInterface;
 use Contao\ManagerPlugin\Bundle\Config\BundleConfig;
 use Contao\ManagerPlugin\Bundle\Parser\ParserInterface;
@@ -19,7 +20,7 @@ class Plugin implements BundlePluginInterface, RoutingPluginInterface
     {
         return [
             BundleConfig::create(ContaoBlogSyncBundle::class)
-                ->setLoadAfter([ContaoCoreBundle::class])
+                ->setLoadAfter([ContaoCoreBundle::class, ContaoNewsBundle::class])
         ];
     }
 

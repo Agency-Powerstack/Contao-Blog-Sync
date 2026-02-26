@@ -17,6 +17,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - web
 
   contao-web:
     build: ./docker
@@ -30,6 +32,8 @@ services:
     volumes:
       - contao-data:/var/www/html
       - ./:/var/www/bundle:ro
+    extra_hosts:
+      - "minio:host-gateway"  # MinIO im AgencyPowerstack-Netzwerk via Host-Port 9000 erreichbar
     environment:
       CONTAO_VERSION: ${CONTAO_VERSION:-5.3}
       DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@contao-db:3306/${MYSQL_DATABASE}
@@ -37,7 +41,12 @@ services:
       CONTAO_ADMIN_PASSWORD: ${CONTAO_ADMIN_PASSWORD}
       CONTAO_ADMIN_EMAIL: ${CONTAO_ADMIN_EMAIL:-admin@example.com}
       BLOG_SYNC_FRONTEND_URL: ${BLOG_SYNC_FRONTEND_URL:-https://app.agency-powerstack.com}
+    networks:
+      - web
 
 volumes:
   contao-db-data:
   contao-data:
+
+networks:
+  web:

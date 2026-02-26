@@ -9,11 +9,14 @@ use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Annotation\Route;
-use Symfony\Component\Security\Http\Attribute\IsGranted;
 
+/**
+ * Receives disconnect requests from Agency Powerstack via HTTP POST.
+ * Authentication: Authorization: Bearer {api_key}
+ */
 #[Route('/contao/blog-sync/disconnect', name: 'blog_sync_disconnect', methods: ['POST'])]
-#[IsGranted('ROLE_USER')]
 class DisconnectController extends AbstractController
 {
     public function __construct(
@@ -24,31 +27,54 @@ class DisconnectController extends AbstractController
 
     public function __invoke(Request $request): JsonResponse
     {
-        $connectionId = $request->request->get('connection_id', '');
-
-        if (empty($connectionId)) {
-            return new JsonResponse(['success' => false, 'message' => 'Missing connection_id'], 400);
+        $config = $this->authenticate($request);
+        if ($config === null) {
+            return new JsonResponse(['success' => false, 'message' => 'Unauthorized'], Response::HTTP_UNAUTHORIZED);
         }
 
         try {
-            $deleted = $this->connection->delete('tl_blog_sync_config', [
-                'connection_id' => $connectionId,
+            $this->connection->delete('tl_blog_sync_config', ['id' => (int) $config['id']]);
+
+            $this->logger->info('Blog Sync: Config removed via disconnect push', [
+                'connection_id' => $config['connection_id'],
             ]);
 
-            if ($deleted > 0) {
-                $this->logger->info('Blog Sync: Config removed via disconnect push', [
-                    'connection_id' => $connectionId,
-                ]);
-
-                return new JsonResponse(['success' => true]);
-            }
-
-            return new JsonResponse(['success' => false, 'message' => 'Config not found'], 404);
+            return new JsonResponse(['success' => true]);
 
         } catch (\Exception $e) {
             $this->logger->error('Blog Sync: Error during disconnect - ' . $e->getMessage());
 
-            return new JsonResponse(['success' => false, 'message' => 'Error'], 500);
+            return new JsonResponse(['success' => false, 'message' => 'Error'], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
+    }
+
+    private function authenticate(Request $request): ?array
+    {
+        $authHeader = $request->headers->get('Authorization', '');
+        if (!str_starts_with($authHeader, 'Bearer ')) {
+            return null;
+        }
+
+        $providedKey = substr($authHeader, 7);
+        if (empty($providedKey)) {
+            return null;
+        }
+
+        try {
+            $configs = $this->connection->fetchAllAssociative(
+                "SELECT * FROM tl_blog_sync_config WHERE api_key != ''"
+            );
+        } catch (\Exception $e) {
+            $this->logger->error('Blog Sync Disconnect: DB error during auth - ' . $e->getMessage());
+            return null;
+        }
+
+        foreach ($configs as $config) {
+            if (hash_equals($config['api_key'], $providedKey)) {
+                return $config;
+            }
+        }
+
+        return null;
     }
 }

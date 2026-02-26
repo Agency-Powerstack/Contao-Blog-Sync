@@ -19,12 +19,16 @@ function blogSyncGetFrontendUrl(): string
 
 $GLOBALS['TL_DCA']['tl_blog_sync_config'] = [
     'config' => [
-        'dataContainer' => DC_Table::class,
+        'dataContainer'   => DC_Table::class,
+        'ctable'          => ['tl_blog_sync_log'],
         'enableVersioning' => false,
-        'notCreatable' => true,
+        'notCreatable'    => true,
         'onload_callback' => [
             static function () {
-                if (\Contao\Input::get('act') === null) {
+                $act = \Contao\Input::get('act');
+
+                // Listenansicht: Infomeldung wenn leer
+                if ($act === null) {
                     $count = \Contao\Database::getInstance()
                         ->execute("SELECT COUNT(*) AS total FROM tl_blog_sync_config")
                         ->total;
@@ -35,23 +39,25 @@ $GLOBALS['TL_DCA']['tl_blog_sync_config'] = [
                                 ?? 'Es sind noch keine Accounts vorhanden. Klicken Sie auf "Neuen Account anlegen", um einen Account hinzuzufügen.'
                         );
                     }
+                }
 
-                    // Inject WebSocket config for JS
-                    $config = \Contao\Database::getInstance()
-                        ->execute("SELECT connection_id FROM tl_blog_sync_config WHERE sync_enabled = '1' LIMIT 1")
-                        ->fetchAssoc();
+                // Bearbeitungsansicht: API-Key und Push-URL anzeigen
+                if ($act === 'edit') {
+                    $id = (int) \Contao\Input::get('id');
+                    if ($id > 0) {
+                        $row = \Contao\Database::getInstance()
+                            ->prepare("SELECT api_key FROM tl_blog_sync_config WHERE id=?")
+                            ->execute($id)
+                            ->fetchAssoc();
 
-                    if ($config && !empty($config['connection_id'])) {
-                        $frontendUrl = blogSyncGetFrontendUrl();
-                        $GLOBALS['TL_BODY'][] = sprintf(
-                            '<script>window.BLOG_SYNC_CONFIG = %s;</script>',
-                            json_encode([
-                                'connectionId' => $config['connection_id'],
-                                'wsUrl' => $frontendUrl,
-                                'syncTriggerUrl' => \Contao\Environment::get('base') . 'contao/blog-sync/trigger-sync',
-                                'requestToken' => \Contao\System::getContainer()->get('contao.csrf.token_manager')->getDefaultTokenValue(),
-                            ])
-                        );
+                        if ($row && !empty($row['api_key'])) {
+                            $pushUrl = \Contao\Environment::get('base') . 'contao/blog-sync/api/push';
+                            \Contao\Message::addInfo(
+                                '<strong>Push-API URL für Agency Powerstack:</strong><br>'
+                                . '<code style="word-break:break-all">' . htmlspecialchars($pushUrl) . '</code><br>'
+                                . '<small>Diese URL und den API-Key werden automatisch bei der Verbindung übertragen.</small>'
+                            );
+                        }
                     }
                 }
             },
@@ -70,40 +76,76 @@ $GLOBALS['TL_DCA']['tl_blog_sync_config'] = [
     ],
     'list' => [
         'sorting' => [
-            'mode' => 1,
-            'fields' => ['id'],
+            'mode'        => 1,
+            'fields'      => ['id'],
             'panelLayout' => '',
         ],
         'label' => [
-            'fields' => ['client_id', 'site_url'],
-            'format' => 'Account (%s - %s)',
+            'fields'         => ['connection_id', 'account_email', 'site_url'],
+            'format'         => 'Account (%s)',
             'label_callback' => static function (array $row, string $label): string {
-                $siteUrl = $row['site_url'] ?? '';
+                $displayName = $row['account_email'] ?: ($row['site_url'] ?: $label);
                 $status = !empty($row['sync_enabled']) ? '&#9679;' : '&#9675;';
                 $statusColor = !empty($row['sync_enabled']) ? 'green' : 'gray';
+
+                $warning = '';
+                if (empty($row['news_archive_id']) || (int) $row['news_archive_id'] === 0) {
+                    $warningText = $GLOBALS['TL_LANG']['tl_blog_sync_config']['noArchiveWarning'] ?? 'Kein Nachrichtenarchiv verknüpft';
+                    $warning = sprintf(
+                        ' <span style="color:#c33;font-weight:normal;font-size:0.85em" title="%s">&#9888; %s</span>',
+                        htmlspecialchars($warningText),
+                        htmlspecialchars($warningText)
+                    );
+                }
+
+                // Letzten Log-Eintrag anzeigen
+                $logHtml = '';
+                try {
+                    $lastLog = \Contao\Database::getInstance()
+                        ->prepare("SELECT * FROM tl_blog_sync_log WHERE pid=? ORDER BY tstamp DESC LIMIT 1")
+                        ->execute((int) $row['id'])
+                        ->fetchAssoc();
+
+                    if ($lastLog) {
+                        $logColor = ($lastLog['status'] === 'success') ? '#4caf50' : '#f44336';
+                        $logDate  = date('d.m.Y H:i', (int) $lastLog['tstamp']);
+                        $logHtml  = sprintf(
+                            ' <small style="color:%s;font-weight:normal">(%s · %s · %d importiert)</small>',
+                            $logColor,
+                            $logDate,
+                            htmlspecialchars((string) $lastLog['sync_type']),
+                            (int) $lastLog['imported_count']
+                        );
+                    }
+                } catch (\Exception) {
+                    // Log-Tabelle existiert noch nicht → ignorieren
+                }
+
                 return sprintf(
-                    '<span style="font-weight:600"><span style="color:%s">%s</span> %s</span>',
+                    '<span style="font-weight:600"><span style="color:%s">%s</span> %s</span>%s%s',
                     $statusColor,
                     $status,
-                    $siteUrl ?: $label
+                    htmlspecialchars($displayName),
+                    $warning,
+                    $logHtml
                 );
             },
         ],
         'global_operations' => [
             'connect_new' => [
-                'label' => &$GLOBALS['TL_LANG']['tl_blog_sync_config']['connect_new'],
-                'href' => '',
-                'class' => 'header_new',
+                'label'           => &$GLOBALS['TL_LANG']['tl_blog_sync_config']['connect_new'],
+                'href'            => '',
+                'class'           => 'header_new',
                 'button_callback' => static function (): string {
                     $frontendUrl = blogSyncGetFrontendUrl();
-                    $connectUrl = rtrim($frontendUrl, '/') . '/connect/contao';
+                    $connectUrl  = rtrim($frontendUrl, '/') . '/connect/contao';
 
                     $callbackUrl = \Contao\Environment::get('base') . 'contao/blog-sync/callback';
-                    $siteUrl = \Contao\Environment::get('host');
+                    $siteUrl     = \Contao\Environment::get('host');
 
                     $url = $connectUrl . '?' . http_build_query([
                         'callback_url' => $callbackUrl,
-                        'site_url' => $siteUrl,
+                        'site_url'     => $siteUrl,
                     ]);
 
                     return sprintf(
@@ -115,8 +157,8 @@ $GLOBALS['TL_DCA']['tl_blog_sync_config'] = [
                 },
             ],
             'all' => [
-                'href' => 'act=select',
-                'class' => 'header_edit_all',
+                'href'       => 'act=select',
+                'class'      => 'header_edit_all',
                 'attributes' => 'onclick="Backend.getScrollOffset()" accesskey="e"',
             ],
         ],
@@ -125,15 +167,20 @@ $GLOBALS['TL_DCA']['tl_blog_sync_config'] = [
                 'href' => 'act=edit',
                 'icon' => 'edit.svg',
             ],
+            'logs' => [
+                'label' => &$GLOBALS['TL_LANG']['tl_blog_sync_config']['logs'],
+                'href'  => 'table=tl_blog_sync_log',
+                'icon'  => 'show.svg',
+            ],
             'delete' => [
-                'href' => 'act=delete',
-                'icon' => 'delete.svg',
+                'href'       => 'act=delete',
+                'icon'       => 'delete.svg',
                 'attributes' => 'onclick="if(!confirm(\'Soll dieser Account wirklich gelöscht werden? Die Verbindung wird auch im Agency Powerstack Backend entfernt.\'))return false;Backend.getScrollOffset()"',
             ],
         ],
     ],
     'palettes' => [
-        'default' => '{api_legend},client_id,client_secret,connection_id,api_url,site_url;{sync_legend},news_archive_id,sync_enabled;{status_legend},last_sync',
+        'default' => '{sync_legend},news_archive_id,sync_enabled;{status_legend},last_sync;{api_legend},connection_id,account_email,site_url,api_key',
     ],
     'fields' => [
         'id' => [
@@ -142,72 +189,55 @@ $GLOBALS['TL_DCA']['tl_blog_sync_config'] = [
         'tstamp' => [
             'sql' => "int(10) unsigned NOT NULL default 0",
         ],
-        'client_id' => [
-            'label' => &$GLOBALS['TL_LANG']['tl_blog_sync_config']['client_id'],
-            'exclude' => true,
-            'inputType' => 'text',
-            'eval' => ['readonly' => true, 'maxlength' => 255, 'tl_class' => 'w50'],
-            'sql' => "varchar(255) NOT NULL default ''",
-        ],
-        'client_secret' => [
-            'label' => &$GLOBALS['TL_LANG']['tl_blog_sync_config']['client_secret'],
-            'exclude' => true,
-            'inputType' => 'text',
-            'eval' => ['readonly' => true, 'maxlength' => 255, 'tl_class' => 'w50'],
-            'sql' => "varchar(255) NOT NULL default ''",
-        ],
         'connection_id' => [
-            'label' => &$GLOBALS['TL_LANG']['tl_blog_sync_config']['connection_id'],
-            'exclude' => true,
+            'label'     => &$GLOBALS['TL_LANG']['tl_blog_sync_config']['connection_id'],
+            'exclude'   => true,
             'inputType' => 'text',
-            'eval' => ['readonly' => true, 'maxlength' => 255, 'tl_class' => 'w50'],
-            'sql' => "varchar(255) NOT NULL default ''",
+            'eval'      => ['readonly' => true, 'maxlength' => 255, 'tl_class' => 'w50'],
+            'sql'       => "varchar(255) NOT NULL default ''",
         ],
-        'access_token' => [
-            'label' => &$GLOBALS['TL_LANG']['tl_blog_sync_config']['access_token'],
-            'exclude' => true,
+        'account_email' => [
+            'label'     => &$GLOBALS['TL_LANG']['tl_blog_sync_config']['account_email'],
+            'exclude'   => true,
             'inputType' => 'text',
-            'eval' => ['maxlength' => 500, 'tl_class' => 'w50'],
-            'sql' => "varchar(500) NOT NULL default ''",
+            'eval'      => ['readonly' => true, 'maxlength' => 255, 'tl_class' => 'w50'],
+            'sql'       => "varchar(255) NOT NULL default ''",
         ],
-        'api_url' => [
-            'label' => &$GLOBALS['TL_LANG']['tl_blog_sync_config']['api_url'],
-            'exclude' => true,
+        'api_key' => [
+            'label'     => &$GLOBALS['TL_LANG']['tl_blog_sync_config']['api_key'],
+            'exclude'   => true,
             'inputType' => 'text',
-            'eval' => ['readonly' => true, 'maxlength' => 500, 'tl_class' => 'w50', 'rgxp' => 'url'],
-            'sql' => "varchar(500) NOT NULL default ''",
+            'eval'      => ['readonly' => true, 'maxlength' => 64, 'tl_class' => 'w50'],
+            'sql'       => "varchar(64) NOT NULL default ''",
         ],
         'site_url' => [
-            'label' => &$GLOBALS['TL_LANG']['tl_blog_sync_config']['site_url'],
-            'exclude' => true,
+            'label'     => &$GLOBALS['TL_LANG']['tl_blog_sync_config']['site_url'],
+            'exclude'   => true,
             'inputType' => 'text',
-            'eval' => ['readonly' => true, 'maxlength' => 500, 'tl_class' => 'w50'],
-            'sql' => "varchar(500) NOT NULL default ''",
+            'eval'      => ['readonly' => true, 'maxlength' => 500, 'tl_class' => 'w50'],
+            'sql'       => "varchar(500) NOT NULL default ''",
         ],
         'news_archive_id' => [
-            'label' => &$GLOBALS['TL_LANG']['tl_blog_sync_config']['news_archive_id'],
-            'exclude' => true,
-            'inputType' => 'select',
+            'label'      => &$GLOBALS['TL_LANG']['tl_blog_sync_config']['news_archive_id'],
+            'exclude'    => true,
+            'inputType'  => 'select',
             'foreignKey' => 'tl_news_archive.title',
-            'eval' => ['mandatory' => true, 'tl_class' => 'w50', 'includeBlankOption' => true],
-            'sql' => "int(10) unsigned NOT NULL default 0",
+            'eval'       => ['mandatory' => true, 'tl_class' => 'w50', 'includeBlankOption' => true],
+            'sql'        => "int(10) unsigned NOT NULL default 0",
         ],
         'sync_enabled' => [
-            'label' => &$GLOBALS['TL_LANG']['tl_blog_sync_config']['sync_enabled'],
-            'exclude' => true,
+            'label'     => &$GLOBALS['TL_LANG']['tl_blog_sync_config']['sync_enabled'],
+            'exclude'   => true,
             'inputType' => 'checkbox',
-            'eval' => ['tl_class' => 'w50'],
-            'sql' => "char(1) NOT NULL default ''",
-        ],
-        'sync_interval' => [
-            'sql' => "int(10) unsigned NOT NULL default 43200",
+            'eval'      => ['tl_class' => 'w50'],
+            'sql'       => "char(1) NOT NULL default ''",
         ],
         'last_sync' => [
-            'label' => &$GLOBALS['TL_LANG']['tl_blog_sync_config']['last_sync'],
-            'exclude' => true,
+            'label'     => &$GLOBALS['TL_LANG']['tl_blog_sync_config']['last_sync'],
+            'exclude'   => true,
             'inputType' => 'text',
-            'eval' => ['readonly' => true, 'rgxp' => 'datim', 'tl_class' => 'w50'],
-            'sql' => "int(10) unsigned NOT NULL default 0",
+            'eval'      => ['readonly' => true, 'rgxp' => 'datim', 'tl_class' => 'w50'],
+            'sql'       => "int(10) unsigned NOT NULL default 0",
         ],
     ],
 ];

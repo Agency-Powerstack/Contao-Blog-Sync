@@ -2,19 +2,15 @@
 
 use Contao\DC_Table;
 
-// Helper to get the frontend URL from container parameter or env var
+/**
+ * Returns the Agency Powerstack frontend URL from the Symfony container parameter.
+ *
+ * The parameter is set by ContaoBlogSyncExtension and resolves the BLOG_SYNC_FRONTEND_URL
+ * environment variable, falling back to 'https://app.agency-powerstack.com' when absent.
+ */
 function blogSyncGetFrontendUrl(): string
 {
-    $container = \Contao\System::getContainer();
-
-    if ($container->hasParameter('blog_sync.frontend_url')) {
-        return $container->getParameter('blog_sync.frontend_url');
-    }
-
-    return $_SERVER['BLOG_SYNC_FRONTEND_URL']
-        ?? $_ENV['BLOG_SYNC_FRONTEND_URL']
-        ?? getenv('BLOG_SYNC_FRONTEND_URL')
-        ?: 'https://app.agency-powerstack.com';
+    return \Contao\System::getContainer()->getParameter('blog_sync.frontend_url');
 }
 
 $GLOBALS['TL_DCA']['tl_blog_sync_config'] = [
@@ -38,26 +34,6 @@ $GLOBALS['TL_DCA']['tl_blog_sync_config'] = [
                             $GLOBALS['TL_LANG']['tl_blog_sync_config']['emptyList']
                                 ?? 'Es sind noch keine Accounts vorhanden. Klicken Sie auf "Neuen Account anlegen", um einen Account hinzuzufügen.'
                         );
-                    }
-                }
-
-                // Bearbeitungsansicht: API-Key und Push-URL anzeigen
-                if ($act === 'edit') {
-                    $id = (int) \Contao\Input::get('id');
-                    if ($id > 0) {
-                        $row = \Contao\Database::getInstance()
-                            ->prepare("SELECT api_key FROM tl_blog_sync_config WHERE id=?")
-                            ->execute($id)
-                            ->fetchAssoc();
-
-                        if ($row && !empty($row['api_key'])) {
-                            $pushUrl = \Contao\Environment::get('base') . 'contao/blog-sync/api/push';
-                            \Contao\Message::addInfo(
-                                '<strong>Push-API URL für Agency Powerstack:</strong><br>'
-                                . '<code style="word-break:break-all">' . htmlspecialchars($pushUrl) . '</code><br>'
-                                . '<small>Diese URL und den API-Key werden automatisch bei der Verbindung übertragen.</small>'
-                            );
-                        }
                     }
                 }
             },
@@ -175,12 +151,12 @@ $GLOBALS['TL_DCA']['tl_blog_sync_config'] = [
             'delete' => [
                 'href'       => 'act=delete',
                 'icon'       => 'delete.svg',
-                'attributes' => 'onclick="if(!confirm(\'Soll dieser Account wirklich gelöscht werden? Die Verbindung wird auch im Agency Powerstack Backend entfernt.\'))return false;Backend.getScrollOffset()"',
+                'attributes' => 'onclick="if(!confirm(\'Soll dieser Account wirklich gelöscht werden?\'))return false;Backend.getScrollOffset()"',
             ],
         ],
     ],
     'palettes' => [
-        'default' => '{sync_legend},news_archive_id,sync_enabled;{status_legend},last_sync;{api_legend},connection_id,account_email,site_url,api_key',
+        'default' => '{sync_legend},news_archive_id,sync_enabled;{status_legend},last_sync;{api_legend:hide},connection_id,account_email,site_url,api_key',
     ],
     'fields' => [
         'id' => [

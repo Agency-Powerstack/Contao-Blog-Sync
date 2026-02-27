@@ -6,7 +6,13 @@ namespace AgencyPowerstack\ContaoBlogSyncBundle\Service;
 
 use Doctrine\DBAL\Connection;
 
-class SyncLogger
+/**
+ * Persists sync operation results to the tl_blog_sync_log table.
+ *
+ * Logging is non-blocking: any DB error is silently swallowed so that
+ * a logging failure can never abort the actual import or disconnect flow.
+ */
+final class SyncLogger
 {
     public function __construct(
         private readonly Connection $connection,

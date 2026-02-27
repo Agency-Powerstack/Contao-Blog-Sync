@@ -3,7 +3,11 @@ services:
     autowire: true
     autoconfigure: true
     public: false
+    # Bind the frontend URL parameter to any service with a $frontendUrl constructor argument
+    bind:
+      string $frontendUrl: '%blog_sync.frontend_url%'
 
+  # Register all classes in src/ as services (excludes ContaoManager and DI extension)
   AgencyPowerstack\ContaoBlogSyncBundle\:
     resource: '../src/'
     exclude:
@@ -11,37 +15,19 @@ services:
       - '../src/Resources/'
       - '../src/DependencyInjection/'
 
-  AgencyPowerstack\ContaoBlogSyncBundle\Service\BlogImporter:
-    arguments:
-      $logger: '@monolog.logger'
-      $kernel: '@kernel'
-      $connection: '@doctrine.dbal.default_connection'
+  # AccountDeleteListener must be public so Contao can resolve the DCA callback
+  AgencyPowerstack\ContaoBlogSyncBundle\EventListener\AccountDeleteListener:
+    public: true
 
-  AgencyPowerstack\ContaoBlogSyncBundle\Service\SyncLogger:
-    arguments:
-      $connection: '@doctrine.dbal.default_connection'
-
+  # Controllers need the service_arguments tag for Symfony's controller argument resolving
   AgencyPowerstack\ContaoBlogSyncBundle\Controller\ConnectCallbackController:
     tags:
       - { name: 'controller.service_arguments' }
 
   AgencyPowerstack\ContaoBlogSyncBundle\Controller\Api\BlogPushController:
-    arguments:
-      $connection: '@doctrine.dbal.default_connection'
-      $blogImporter: '@AgencyPowerstack\ContaoBlogSyncBundle\Service\BlogImporter'
-      $syncLogger: '@AgencyPowerstack\ContaoBlogSyncBundle\Service\SyncLogger'
-      $framework: '@contao.framework'
-      $logger: '@monolog.logger'
     tags:
       - { name: 'controller.service_arguments' }
 
   AgencyPowerstack\ContaoBlogSyncBundle\Controller\DisconnectController:
     tags:
       - { name: 'controller.service_arguments' }
-
-  AgencyPowerstack\ContaoBlogSyncBundle\EventListener\AccountDeleteListener:
-    public: true
-    arguments:
-      $connection: '@doctrine.dbal.default_connection'
-      $logger: '@monolog.logger'
-      $params: '@parameter_bag'

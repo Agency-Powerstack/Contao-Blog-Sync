@@ -5,7 +5,7 @@
  */
 $GLOBALS['BE_MOD']['agency_powerstack']['blog_sync_config'] = [
     'tables' => ['tl_blog_sync_config', 'tl_blog_sync_log'],
-    'icon'   => 'bundles/contaoblogsync/icons/blog-sync.svg',
+    'icon'   => 'bundles/contaoblogsync/icons/logo-ap.svg',
 ];
 
 /**

@@ -1,0 +1,4 @@
+/.env.example       export-ignore
+/docker             export-ignore
+/docker-compose.yml export-ignore
+/.vscode            export-ignore

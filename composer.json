@@ -2,13 +2,32 @@
     "name": "agencypowerstack/contao-blog-sync",
     "type": "contao-bundle",
     "description": "Automatische Blog-Synchronisation mit Agency Powerstack",
-    "license": "MIT",
+    "keywords": ["contao", "contao-bundle", "blog", "news", "sync", "agency-powerstack"],
+    "homepage": "https://github.com/agencypowerstack/contao-blog-sync",
+    "license": "proprietary",
+    "authors": [
+        {
+            "name": "Agency Powerstack",
+            "homepage": "https://agency-powerstack.com",
+            "role": "Developer"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/agencypowerstack/contao-blog-sync/issues",
+        "source": "https://github.com/agencypowerstack/contao-blog-sync"
+    },
     "require": {
         "php": "^8.1",
         "contao/core-bundle": "^5.0",
         "contao/news-bundle": "^5.0",
         "symfony/framework-bundle": "^6.0 || ^7.0",
         "symfony/http-client": "^6.0 || ^7.0"
+    },
+    "require-dev": {
+        "contao/manager-plugin": "^2.0"
+    },
+    "conflict": {
+        "contao/manager-plugin": "<2.0 || >=3.0"
     },
     "autoload": {
         "psr-4": {

@@ -58,7 +58,8 @@ final class ConnectCallbackController extends AbstractController
         try {
             // Generate a secure 64-character API key
             $apiKey  = bin2hex(random_bytes(32));
-            $siteUrl = $request->getSchemeAndHttpHost();
+            $scheme  = $request->headers->get('X-Forwarded-Proto', $request->getScheme());
+            $siteUrl = $scheme . '://' . $request->getHttpHost();
 
             // account_email is passed by the frontend from the authenticated user's profile.
             // Sanitize: strip HTML tags and truncate to the column length.

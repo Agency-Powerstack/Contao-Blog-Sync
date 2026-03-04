@@ -3,7 +3,7 @@
     "type": "contao-bundle",
     "description": "Automatische Blog-Synchronisation mit Agency Powerstack",
     "keywords": ["contao", "contao-bundle", "blog", "news", "sync", "agency-powerstack"],
-    "homepage": "https://github.com/agencypowerstack/contao-blog-sync",
+    "homepage": "https://agency-powerstack.com",
     "license": "proprietary",
     "authors": [
         {
@@ -13,8 +13,8 @@
         }
     ],
     "support": {
-        "issues": "https://github.com/agencypowerstack/contao-blog-sync/issues",
-        "source": "https://github.com/agencypowerstack/contao-blog-sync"
+        "issues": "https://github.com/Agency-Powerstack/Contao-Blog-Sync/issues",
+        "source": "https://github.com/Agency-Powerstack/Contao-Blog-Sync"
     },
     "require": {
         "php": "^8.1",
